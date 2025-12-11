@@ -1,0 +1,316 @@
+Technology Stack
+------------------------------------------------------------------------------------------
+| Component	         |   Technology	  |  Version	 |  Purpose                            |
+------------------------------------------------------------------------------------------
+| Framework	         |   FastAPI	    |  0.104.x	 |  Modern Python web framework        |
+| Server	           |   Uvicorn	    |  0.24.x	   |  ASGI server for async processing   |
+| Image Processing   |   OpenCV	      |  4.8.x	   |  Computer vision for face detection |
+| Image Manipulation |   PIL/Pillow	  |  10.1.x	   |  Image processing and composition   |  
+| Async File I/O	   |   aiofiles	    |  23.2.x	   |  Asynchronous file operations       |
+| Deployment	       |   Render.com	  |  Platform	 |  Managed Python hosting             |
+------------------------------------------------------------------------------------------
+
+API Endpoints
+Endpoint	Method	Description	Input	Output
+GET /	GET	API Information	None	Service metadata
+GET /health	GET	Health Check	None	{"status": "healthy"}
+POST /upload	POST	Image Upload	multipart/form-data with file field	Task ID and initial status
+GET /result/{task_id}	GET	Status Check	Task ID	Current status and progress
+GET /download/{filename}	GET	Result Download	Filename	Personalized image file
+Core Processing Pipeline
+
+
+1. Upload Handler with Validation:
+
+python
+@app.post("/upload")
+async def upload_image(file: UploadFile = File(...)):
+    """
+    Receives image upload, validates it, and starts processing pipeline.
+    Key Points:
+    - Accepts only image files (JPG, PNG, WEBP)
+    - Generates unique task ID for tracking
+    - Starts async processing to avoid blocking
+    - Returns immediately with task reference
+    """
+    # Validate file type
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(400, "Only image files allowed")
+    
+    # Generate unique identifier for this processing job
+    task_id = str(uuid.uuid4())
+    
+    # Store file asynchronously
+    file_path = f"uploads/{task_id}.{file.filename.split('.')[-1]}"
+    await save_uploaded_file(file, file_path)
+    
+    # Initialize task tracking
+    tasks[task_id] = {"status": "processing", "progress": 0}
+    
+    # Start background processing (non-blocking)
+    asyncio.create_task(ai_processing_pipeline(task_id, file_path))
+    
+    return {"task_id": task_id, "message": "Processing started"}
+
+
+2. AI Processing Pipeline:
+
+python
+async def ai_processing_pipeline(task_id: str, image_path: str):
+    """
+    Four-stage AI processing pipeline:
+    1. Face Detection (OpenCV Haar Cascade)
+    2. Image Enhancement & Cropping
+    3. Template Integration (Storybook Frame)
+    4. Result Saving & Status Update
+    
+    Each stage updates progress for real-time tracking.
+    """
+    try:
+        # Stage 1: Face Detection (25% progress)
+        update_progress(task_id, 25, "Detecting face")
+        faces = detect_faces(image_path)
+        
+        # Stage 2: Image Enhancement (50% progress)
+        update_progress(task_id, 50, "Enhancing image")
+        enhanced_image = enhance_image(image_path, faces)
+        
+        # Stage 3: Template Integration (75% progress)
+        update_progress(task_id, 75, "Applying storybook style")
+        result_image = apply_storybook_template(enhanced_image)
+        
+        # Stage 4: Save Result (100% progress)
+        update_progress(task_id, 100, "Finalizing")
+        result_path = save_result(task_id, result_image)
+        
+        # Mark as complete
+        tasks[task_id].update({
+            "status": "completed",
+            "result_url": f"/download/{os.path.basename(result_path)}"
+        })
+        
+    except Exception as e:
+        # Comprehensive error handling
+        tasks[task_id].update({
+            "status": "failed",
+            "error": str(e),
+            "progress": 0
+        })
+
+
+3. Face Detection Implementation:
+
+python
+def detect_faces(image_path: str):
+    """
+    Uses OpenCV's Haar Cascade classifier for face detection.
+    Advantages for MVP:
+    - Lightweight and fast
+    - No external API dependencies
+    - Works reasonably well for frontal faces
+    - No GPU required
+    
+    Limitations:
+    - Less accurate for side profiles
+    - Sensitive to lighting conditions
+    """
+    # Load image in grayscale (faster processing)
+    image = cv2.imread(image_path)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Load pre-trained face detector
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+    )
+    
+    # Detect faces with sensitivity tuning
+    faces = face_cascade.detectMultiScale(
+        gray,
+        scaleFactor=1.1,    # How much image size reduced at each scale
+        minNeighbors=5,     # How many neighbors each candidate rectangle should have
+        minSize=(100, 100)  # Minimum object size
+    )
+    
+    return faces
+Storage Strategy
+Uploads Directory: Temporary storage of original images
+
+Results Directory: Permanent storage of processed images
+
+In-Memory Task Tracking: Dictionary-based task status (for MVP)
+
+File Cleanup: Optional cleanup job for old files (not implemented in MVP)
+
+Deployment Configuration on Render.com
+yaml
+# Render Blueprint Configuration
+services:
+  - type: web
+    name: pickabook-backend
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
+🔄 INTEGRATION & DATA FLOW
+Complete End-to-End Flow
+User Interaction: User selects/ drags image in browser
+
+Frontend Processing: Client-side validation and preview generation
+
+API Request: FormData sent to /upload endpoint with file field
+
+Backend Reception: File validation, storage, and task initialization
+
+Async Processing: AI pipeline runs in background
+
+Status Polling: Frontend polls /result/{task_id} every second
+
+Progress Updates: Backend updates progress through stages
+
+Completion: Result URL returned when processing done
+
+Download: Frontend fetches image from /download/{filename}
+
+User Delivery: Image displayed with download option
+
+Error Handling Strategy
+Frontend: Network retries, user-friendly error messages
+
+Backend: Comprehensive exception catching, detailed error responses
+
+Processing: Graceful degradation if face detection fails
+
+Storage: Filesystem permissions and space monitoring
+
+
+
+🎯 DESIGN DECISIONS & TRADEOFFS
+Why FastAPI over Django/Flask?
+Async First: Native support for async/await for I/O operations
+
+Performance: Faster request processing for image uploads
+
+Type Safety: Pydantic models for request/response validation
+
+Auto Docs: Automatic OpenAPI/Swagger documentation
+
+Why Client Polling over WebSockets?
+Simplicity: No need for persistent connections in MVP
+
+Scalability: Stateless API easier to scale horizontally
+
+Cost: No WebSocket server infrastructure required
+
+Reliability: HTTP retries handle transient network issues
+
+Why OpenCV Haar Cascade over DNN/Cloud AI?
+Cost: No API fees or GPU costs
+
+Privacy: User images stay on server
+
+Speed: Local processing faster than network calls
+
+Control: Full control over processing pipeline
+
+MVP Focus: Good enough for prototype demonstration
+
+Why Local Filesystem over Cloud Storage?
+Simplicity: No additional service configuration
+
+Cost: No storage fees for MVP
+
+Speed: Direct filesystem access is fastest
+
+Tradeoff: Not horizontally scalable (addressed in V2 planning)
+
+
+
+📈 SCALABILITY CONSIDERATIONS
+Current Architecture Limitations
+Stateless API: Task tracking in memory (lost on restart)
+
+Local Storage: Filesystem not shared across multiple instances
+
+Synchronous Processing: One image at a time in current implementation
+
+No Queue: No job queuing for high load scenarios
+
+Planned Improvements (V2)
+Database Integration: PostgreSQL for task persistence
+
+Message Queue: Redis/Celery for job distribution
+
+Cloud Storage: AWS S3 or Cloudinary for file storage
+
+Horizontal Scaling: Multiple backend instances with load balancer
+
+Advanced AI: Cloud-based ML services for better face detection
+
+
+
+🔧 DEVELOPMENT & DEPLOYMENT WORKFLOW
+
+Local Development
+bash
+# Backend
+cd backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+Production Deployment
+Backend: Push to GitHub → Auto-deploy on Render.com
+
+Frontend: Push to GitHub → Auto-deploy on Vercel
+
+Environment Variables: Configured in respective dashboards
+
+Monitoring: Built-in logs and metrics on both platforms
+
+🚀 PERFORMANCE METRICS
+Expected Performance
+Upload Time: < 2 seconds (depends on image size)
+
+Processing Time: 5-10 seconds per image
+
+API Response Time: < 100ms for non-processing endpoints
+
+Concurrent Users: 5-10 simultaneous (Free tier limitations)
+
+Optimization Opportunities
+Image Compression: Client-side resizing before upload
+
+CDN Caching: Static assets served from edge locations
+
+Database Indexing: For task lookup optimization
+
+Background Workers: Separate processing from API server
+
+SUMMARY TABLE: TECHNOLOGY CHOICES
+---------------------------------------------------------------------------------------------------------------
+| Layer	             | Technology	          |  Why Chosen	                           | Alternative Considered |
+---------------------------------------------------------------------------------------------------------------
+| Frontend Framework | Next.js 14	          |  SSR capabilities, Vercel integration	 | Create React App       |
+| Backend Framework  | FastAPI	            |  Async support, auto-documentation	   | Django, Flask          |
+| Image Processing   | OpenCV + PIL	        |  Local processing, no API costs	       | Cloud Vision APIs      |
+| File Storage	     | Local Filesystem	    |  Simplicity for MVP	                   | AWS S3, Cloudinary     |
+| Frontend Hosting   | Vercel	              |  Git integration, serverless	         | Netlify, AWS Amplify   |
+| Backend Hosting	   | Render.com	          |  Python support, free tier	           | Railway, Heroku        |
+| Task Tracking	     | In-memory            |  dict	MVP simplicity	                 | Redis, Database        |
+---------------------------------------------------------------------------------------------------------------
+
+This architecture provides a solid foundation for the Pickabook MVP while maintaining clear pathways for future scalability and feature enhancements.
