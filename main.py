@@ -22,7 +22,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://pickabook-frontend-kappa.vercel.app/","https://vercel.com/shuaib2698s-projects/pickabook/BCKuhnVgL2yJjs27w8T27APTfavU","https://pickabook-ochre.vercel.app/",],
+    allow_origins=["http://localhost:3000", "https://pickabook-frontend-kappa.vercel.app","https://vercel.com/shuaib2698s-projects/pickabook/BCKuhnVgL2yJjs27w8T27APTfavU","https://pickabook-ochre.vercel.app",],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
